@@ -1,4 +1,4 @@
-# Syntheziser
+# Synthesizer
 
 Ein kleines Projekt mit HTML, CSS und JavaScript – Ein kleiner Synthesizer und mehr. Nur für Handyformat gedacht.
  
