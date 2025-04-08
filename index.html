@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <script language="javascript" type="text/javascript" src="Function.js"></script>
+		<link href="style.css" rel="stylesheet">
+    </head>
+    <body>
+        <button onclick="play()" id="play">play sound</button>
+        <button disabled=true onclick="stop()" id="stop">stop</button>
+        <button onclick="waveBox"id='btwave'>sine</button>
+        <button type="checkbox" id="song" onclick="playSong()">play song</button>
+        <button onclick="switchSide(-1)" id="switchLeft" disabled="true" style="position:absolute; left:2%; top:50%; width:6%;"><</button>        
+        <button onclick="switchSide(1)" id="switchRight" style="position:absolute; left:92%; top:50%; width:6%;">></button>
+<button onclick="saveSheet()" id="btSave" style="display: none">copy into textarea</button>
+        <textarea id="textarea"  style="display: none; position: absolute; left: 10%; top: 20%; width: 80%; height: 70%; font-size: 5px">song will be saved here</textarea>
+        <script>
+const audiocxt=new AudioContext();
+const mySong=[];  
+var wave='sine';   
+function HTMLElement(str,obj) {
+  let output=document.createElement(str);
+  for(let prop in obj) {
+    output.style[prop]=obj[prop];
+  }
+  return output;
+}   
+function SvgElement(str,obj) {
+  let output=document.createElementNS("http://www.w3.org/2000/svg",str);
+  for(prop in obj) {
+    output.setAttribute(prop, obj[prop]);
+  }
+  return output;
+}
+function svgChgProp(target,obj) {
+  for(prop in obj) {
+    target.setAttribute(prop, obj[prop]);
+  }
+}
+function calcDirection(dx,dy) {
+  if(dx==0&&dy==0) {
+    return 0;
+  }
+  if(dx>=0&&dy>=0) {
+    return Math.PI-Math.atan(Math.abs(dx/dy));
+  }
+  if(dx>=0&&dy<0) {
+    return Math.atan(Math.abs(dx/dy));
+  }
+  if(dx<0&&dy<0) {
+    return 2*Math.PI-Math.atan(Math.abs(dx/dy));
+  }
+  if(dx<0&&dy>=0) {
+    return Math.PI+Math.atan(Math.abs(dx/dy));
+  }
+}
+function Arrow(x,y,l=0,d=0) {
+  this.x=x;
+  this.y=y;
+  this.length=l;
+  this.direction=d; //0-360Grad
+  this.svg=new SvgElement("polygon",{
+    points:(-4)+" "+(-l+8)+" "+0+" "+(-l)+" "+(4)+" "+(-l+8)+" "+(4)+" "+(-l+8),
+    fill: "black",
+    transform: "translate("+x+" "+y+") rotate("+d+" "+0+" "+0+")"
+  });
+  this.move=function(direction) {
+    if(direction<=150||direction>=210) {
+      this.direction=direction;
+      svgChgProp(this.svg,{
+        transform: "translate("+x+" "+y+") rotate("+direction+" "+0+" "+0+")" 
+      });
+    }
+  }
+}
+function  AdjustingWheel(left, top, r, min, max, value, act, label) {
+  this.act=act;
+  this.value=value;
+  this.surface=document.createElement("div");
+  this.surface.style.position="absolute";
+  this.surface.style.left=left+"%";
+  this.surface.style.top=top+"%"; 
+  this.surface.style.height=r*2+10+"px";
+  this.surface.style.width=r*2+10+"px";
+  document.body.appendChild(this.surface);
+  if(label) {
+    this.label = document.createElement("div");
+    this.label.style.fontSize = "8px";
+    this.label.style.textAlign = "center";
+    this.label.style.border = "1px ridge black";
+    this.label.style.backgroundColor = "#1199EE";
+    this.label.style.userSelect = "none";
+    this.label.innerHTML = label;
+    this.surface.appendChild(this.label);
+  } 
+  this.svg=new SvgElement("svg",{
+    position: "absolute",
+    left: 0,
+    top: 0,
+    width: "100%",
+    height: "100%" 
+  })
+  this.surface.appendChild(this.svg);
+  this.arrow=new Arrow(r,r+5,r-1,0);
+  this.svg.appendChild(this.arrow.svg);
+  this.svgElements=({
+    circle: new SvgElement("circle",{
+      cx: r,
+      cy: r+5,
+      r: r-1,
+      stroke: "black",
+      fill: "#556555",
+      "fill-opacity": 0.15
+    }),
+    min: new SvgElement("text",{
+      x: 0,
+      y: r*2.3
+    }),
+    max: new SvgElement("text",{
+      x: r*1.5,
+      y: r*2.3
+    }),
+    mid: new SvgElement("text",{
+      x: r*0.92,
+      y: 4.8
+    }),
+  })
+  for(let [key, obj] of Object.entries(this.svgElements)) {
+    this.svg.appendChild(obj);
+  }
+  this.svgElements.min.innerHTML=min;
+  this.svgElements.min.style.fontSize='5px';
+  this.svgElements.min.style.userSelect = "none";
+  this.svgElements.max.innerHTML=max;
+  this.svgElements.max.style.fontSize='5px';
+  this.svgElements.max.style.userSelect = "none";  
+  this.svgElements.mid.innerHTML=(max+min)/2;
+  this.svgElements.mid.style.fontSize='5px'; 
+  this.svgElements.mid.style.userSelect = "none";
+  this.x=this.surface.offsetLeft+r;
+  this.y=this.surface.offsetTop+r+5;
+  let mousedown = false;
+  this.handleEvent=function() {
+    switch(event.type) {
+      case "touchstart":
+        this.move(event.touches[0].clientX, event.touches[0].clientY);
+      break;
+      case "touchmove":
+        this.move(event.touches[0].clientX, event.touches[0].clientY);
+      break;
+      case "mousedown":
+        this.move(event.clientX, event.clientY);
+        mousedown = true;
+      break;    
+      case "mousemove":
+        if(mousedown) {
+          this.move(event.clientX, event.clientY);  
+        }
+      break;
+      case "mouseup":
+        mousedown = false;
+      break;
+      case "mouseleave":
+        mousedown = false;
+      break;
+    }
+  }
+  this.svgElements.circle.addEventListener("touchstart",this);
+  this.svgElements.circle.addEventListener("touchmove",this);
+  this.svgElements.circle.addEventListener("mousedown",this);
+  document.body.addEventListener("mousemove",this);
+  this.svgElements.circle.addEventListener("mouseleave",this);
+  document.body.addEventListener("mouseup",this);
+  this.move=function(x, y) {
+    this.arrow.move(calcDirection((-1)*(this.surface.offsetLeft+r-x),(-1)*(this.surface.offsetTop+r+5-y))/Math.PI*180);
+        if(this.arrow.direction>=210) {
+          this.value=(max+min)/2-(360-this.arrow.direction)/150*(max-min)/2; 
+        }
+        else {
+          this.value=(max+min)/2+(this.arrow.direction)/150*(max-min)/2;  
+        }    
+        this.act();  
+  }
+}           
+function AdjustingWheelLog10(left,top,r,min,max,steps,value,act) {
+     AdjustingWheel.call(this,left,top,r,min,max,steps,value,act);
+  this.svgElements.mid.innerHTML=(max/min);  
+  this.move=function(x, y) {
+    this.arrow.move(calcDirection((-1)*(this.surface.offsetLeft+r-x),(-1)*(this.surface.offsetTop+r+5-y))/Math.PI*180);
+                    if(this.arrow.direction>=210) {
+          this.value=(10**((Math.log10(max)+Math.log10(min))/2-(360-this.arrow.direction)/150));           
+        }
+        else {
+          this.value=(10**((Math.log10(max)+Math.log10(min))/2+(this.arrow.direction)/150));  
+        }      
+        this.act();
+  }    
+}
+function Graph(x,y,width,height,quant,act) {
+  this.act=act;
+  this.point=[];
+  this.output=[];
+  this.output.length=quant;
+  this.output.fill(0); this.surface=document.createElement("div");
+  this.surface.style.position="absolute";
+  this.surface.style.left=x+"%";
+  this.surface.style.top=y+"%"; 
+  this.surface.style.width=width+"%";
+  this.surface.style.height=height+"%";
+  this.surface.style.border="1px solid black";
+  this.surface.style.backgroundColor="white";
+  document.body.appendChild(this.surface);
+  this.svg=new SvgElement("svg",{
+    position: "absolute",
+    left: 0,
+    top: 0,
+    width: "100%",
+    height: "100%",
+    viewBox: "-10 -5 20 10"
+  });
+  this.surface.appendChild(this.svg);   
+  this.xLine=new SvgElement("line",{
+    x1: -10,
+    y1: 0,
+    x2: 10,
+    y2: 0,
+    stroke: "black",
+    "stroke-width": 0.1
+  })     
+  this.svg.appendChild(this.xLine);
+  this.yLine=new SvgElement("line",{
+    x1: -10,
+    y1: -10,
+    x2: -10,
+    y2: 10,
+    stroke: "black",
+    "stroke-width": 0.1
+  })     
+  this.svg.appendChild(this.yLine);
+  let mousedown = false;
+  this.handleEvent=function() {
+    switch(event.type) {
+      case "touchstart":
+        this.move(event.touches[0].clientX, event.touches[0].clientY); 
+      break;
+      case "touchmove":
+        if(this.surface.offsetLeft<event.touches[0].clientX&&this.surface.offsetLeft+this.surface.clientWidth>event.touches[0].clientX) {
+          this.move(event.touches[0].clientX, event.touches[0].clientY);
+        }
+      break;
+      case "touchend":
+        
+      break; 
+      case "mousedown":
+        this.move(event.clientX, event.clientY);
+        mousedown = true;
+      break;    
+      case "mousemove":
+        if(mousedown) {
+          this.move(event.clientX, event.clientY);  
+        }
+      break;
+      case "mouseup":
+        mousedown = false;
+      break;
+      case "mouseleave":
+        mousedown = false;
+      break;     
+    }
+  }
+  this.surface.addEventListener("touchstart",this);
+  this.surface.addEventListener("touchmove",this);
+  this.surface.addEventListener("mousedown",this);
+  document.body.addEventListener("mousemove",this);
+  this.surface.addEventListener("mouseleave",this);
+  document.body.addEventListener("mouseup",this);
+  this.setPoint=function() {
+    for(let num in this.output) {     
+        this.point[num]=new SvgElement("circle",{
+        r: 0.2,
+        cx: (num*2-quant+1)*10/quant,
+        cy: this.output[num]*15,
+        fill: "black"
+      })   
+      this.svg.appendChild(this.point[num]); 
+    }   
+  }
+  this.move=function(x, y) {
+    this.output[(Math.ceil((x-this.surface.offsetLeft)/this.surface.clientWidth*quant))-1] = (Math.ceil((y-this.surface.offsetTop)/this.surface.clientHeight*100-1)-50)/100 / 1.4;
+    this.setPointPosition();    
+    this.act();      
+  }
+  this.setPoint();
+  this.setPointPosition=function() {
+    for(let num in this.output) {
+      svgChgProp(this.point[num],{
+        cy: this.output[num]*15
+      })  
+    }
+  }
+}
+function Sheet(left,top,width,height) {
+  this.tone=[];
+    this.surface=document.createElement("div");
+  this.surface.style.position="absolute";
+  this.surface.style.left=left+"%";
+  this.surface.style.top=top+"%"; 
+  this.surface.style.width=width+"%";
+  this.surface.style.height=height+"%";
+  this.surface.style.border="1px solid black";
+  this.surface.style.overflow="scroll";
+  document.body.appendChild(this.surface);
+  for(let i=0;i<=88;i++) {
+    let key;
+    if((i+11)%12&&(i+9)%12&&(i+6)%12&&(i+4)%12&&(i+2)%12) {
+      key=new WhiteKey(0,(88-i)*15,30,15,(27.5*2**(i/12)));
+    } 
+    else
+    {
+      key=new BlackKey(0,(88-i)*15,30,15,27.5*(2**(i/12)));
+    }
+    this.surface.appendChild(key.div);
+  }
+  for(let i=0;i<=88;i++) {
+    this.tone[i]=[];
+    for(let j=0;j<=100;j++) { 
+    if((i+11)%12&&(i+9)%12&&(i+6)%12&&(i+4)%12&&(i+2)%12) {
+          this.tone[i][j]=new SheetElement(j,i,30,15,27.5*(2**(i/12)));
+        } 
+        else {
+          this.tone[i][j]=new SheetElement(j,i,30,15,27.5*(2**(i/12)),"#EEEEEE");  
+        }
+        this.surface.appendChild(this.tone[i][j].div);  
+      }    
+  }
+}
+function SheetElement(x,y,width,height,frequency,color="white") {
+  this.timer;
+  this.color=color;
+  this.frequency=frequency;
+  this.div= new HTMLElement("div",{
+    position: "absolute",
+    left: 32+x*30+"px",
+    top: (88-y)*15+"px",
+    width: width+"px",
+    height: height+"px",
+    border: "1px solid black",
+    backgroundColor: color
+  });
+  this.handleEvent=function() {
+    switch(event.type){
+      case "touchstart":
+        this.timer=setTimeout(this.event.bind(this),80);
+      break;
+      case "touchmove":
+        clearTimeout(this.timer);
+      break;
+      case "touchend":
+        clearTimeout(this.timer);
+      case "click":
+        this.event();
+      break;
+    }  
+  }
+  this.div.addEventListener("touchstart",this);
+  this.div.addEventListener("touchmove",this);  
+  this.div.addEventListener("touchend",this);  
+  this.div.addEventListener("click",this); 
+  this.event=function() {
+    if(mySong[x]) {
+      if(mySong[x].includes(frequency)) {
+        mySong[x]=mySong[x].filter(num => num != frequency);   
+        this.div.style.backgroundColor=this.color;
+      }
+      else { 
+        mySong[x][mySong[x].indexOf(0)]=frequency
+      
+        this.div.style.backgroundColor="#859548";
+      }
+    }
+    else {
+      mySong[x]=[frequency,0,0,0,0];  
+      this.div.style.backgroundColor="#859548";
+    }           
+  }
+}
+function Piano(x,y,width,height,frequency) {
+  this.audio=audiocxt;
+  this.frequency=frequency;
+  this.os=this.audio.createOscillator(); 
+  this.os.type="sine";
+  this.gain=this.audio.createGain();
+  this.os.connect(this.gain);
+  this.gain.connect(this.audio.destination);
+  this.gain.gain.value=0.25;
+  this.os.frequency.value=this.frequency;   
+  this.div=new HTMLElement("div",{
+    position: "absolute",
+    left: x+"px",
+    top: y+"px",
+    width: width+"px",
+    height: height+"px"
+  })     
+  this.handleEvent=function() {
+    switch(event.type) {
+      case "touchstart":
+        if(wave=="custom") {
+          this.os.setPeriodicWave(wave);
+        }
+        else {
+          this.os.type=wave;  
+        }        
+        this.os.start();
+        break;
+      case "touchend":
+        this.os.stop(audiocxt.currentTime+0);
+    }
+  }
+ this.div.addEventListener("touchstart",this)
+this.div.addEventListener("touchend",this) 
+}
+function WhiteKey(x,y,width,height,frequency) {
+  Piano.call(this,x,y,width,height,frequency);    
+  this.div.style.border= "1px solid black";
+  this.div.style.backgroundColor="white";   
+}
+function BlackKey(x,y,width,height,frequency) {
+  Piano.call(this,x,y,width,height,frequency);
+  this.div.style.backgroundColor="black";
+} 
+function Visualizer() {
+  this.surface=new HTMLElement("div",{
+    position: "absolute",
+    left: "10%",
+    top: "20%",
+    width: "80%",
+    height: "70%",
+    backgroundColor: "black"
+  })
+  document.body.appendChild(this.surface);
+    this.canvas=new HTMLElement("canvas",{
+    position: "absolute",
+    left: 0,
+    top: 0,
+    width: "100%",
+    height: "100%",
+    backgroundColor: "black"
+  })
+  this.surface.appendChild(this.canvas);
+  this.ctx=this.canvas.getContext("2d");
+  //this.drawVisual = requestAnimationFrame(this.draw)
+  this.draw=function(analyser) {
+    analyser.fftSize=2048;
+    this.bufferLength=analyser.frequencyBinCount;
+    this.dataArray=new Uint8Array(this.bufferLength);
+    analyser.getByteTimeDomainData(this.dataArray); 
+    this.ctx.fillStyle = "black";
+    this.ctx.fillRect(0, 0, this.canvas.width,this.canvas.height);
+    this.ctx.lineWidth = 2;
+    this.ctx.strokeStyle = "white";
+    this.ctx.beginPath();
+    this.sliceWidth = this.canvas/this.bufferLength;
+    let x=0;
+    for (let i = 0; i < this.bufferLength; i++) {
+      const v = this.dataArray[i] / 128.0;
+      const y = v * (this.canvas.height / 2);
+
+      if (x === 0) {
+        this.ctx.moveTo(x, y);
+      } else {
+        this.ctx.lineTo(x, y);
+      }
+      x += this.sliceWidth;
+    }
+    this.ctx.lineTo(this.canvas.width, this.canvas.height / 2);
+    this.ctx.stroke();
+  }
+}
+const song=[[659.3,493.9,0,0,0],[],[],[],[659.3,0,82.4],[],[,,164.8],[],[493.9,415.3,82.4],[],[523.3,0,164.8],[],[587.3,,82.4],[],[659.3,,164.8],[587.3],[523.3,440,82.4],[],[493.9,415.3,164.8],[],[440,329.6,55],[],[,,110],[],[440,0,55],[],[523.3,,110],[],[659.3,,55],[],[,,110],[],[587.3,,55],[],[523.3,,110],[],[493.9,415.3,51.9],[],[,,103.8],[],[493.9,415.3,51.9],[],[523.3,440,103.8],[],[587.3,493.9,51.9],[],[,,103.8],[],[659.3,0,51.9],[],[,,103.8],[],[523.3,0,55],[],[,,110],[],[440,,55],[],[,,110],[],[440,,55],[],[,,110],[],[0,,123.5],[],[,,130.8],[],[0,146.8,73.4],[],[587.3,349.2,146.8],[],[,,73.4],[],[698.5,440,146.8],[],[880,523.3,73.4],[],[,,146.8],[],[784,493.9,73.4],[],[698.5,440,146.8],[],[659.3,523.3,65.4],[],[,,130.8],[],[,,65.4],[],[523.3,329.6,130.8],[],[659.3,392,65.4],[],[,,130.8],[],[587.3,349.2,65.4],[],[523.3,329.6,130.8],[],[493.9,415.3,61.7],[],[,,123.5],[],[493.9,415.3,61.7],[],[523.3,440,123.4],[],[587.3,493.9,61.7],[],[,,123.4],[],[659.3,0,61.7],[],[,,123.4],[],[523.3,,55],[],[,,110],[],[440,,55],[],[,,110],[],[440,,55],[],[,,110],[],[0,,55],[],[,,110],[],[659.3,0,82.4],[],[,,164.8],[],[493.9,415.3,82.4],[],[523.3,0,164.8],[],[587.3,,82.4],[],[,,164.8],[],[523.3,440,82.4],[],[493.9,415.3,164.8],[],[440,329.6,55],[],[,,110],[],[440,0,55],[],[523.3,,110],[],[659.3,,55],[],[,,110],[],[587.3,,55],[],[523.3,,110],[],[493.9,415.3,51.9],[],[,,103.8],[],[493.9,415.3,51.9],[],[523.3,440,103.8],[],[587.3,493.9,51.9],[],[,,103.8],[],[659.3,0,51.9],[],[,103.8],[],[523.3,0,55],[],[,,110],[],[440,,55],[],[,,110],[],[440,,55],[],[,,110],[],[0,,123.5],[],[,,130.8],[],[0,146.8,73.4],[],[587.3,349.2,146.8],[],[,,73.4],[],[698.5,440,146.8],[],[880,523.3,73.4],[],[,,146.8],[],[784,493.9,73.4],[],[698.5,440,146.8],[],[659.3,523.3,65.4],[],[,,130.8],[],[,,65.4],[],[523.3,329.6,130.8],[],[659.3,392,65.4],[],[,,130.8],[],[587.3,349.2,65.4],[],[523.3,329.6,130.8],[],[493.9,415.3,82.4],[],[,,164.8],[],[493.9,415.3,82.4],[],[523.3,440,164.8],[],[587.3,493.9,82.4],[],[,,164.8],[],[659.3,0,82.4],[],[,,164.8],[],[523.3,,110],[],[,,220],[],[440,,110],[],[,,220],[],[440,,110],[],[,,220],[],[0,,110],[],[,,220],[],[261.6,329.6,110],[],[,,164.8],[],[,,110],[],[,,164.8],[],[261.6,220,110],[],[,,164.8],[],[,,110],[],[,,164.8],[],[293.7,246.9,103.8],[],[,,164.8],[],[,,103.8],[],[,,164.8],[],[246.7,207.7,103.8],[],[,164.8],[],[,,103.8],[],[,,164.8],[,,],[261.6,220,110],[,,],[,,164.8],[],[,,110],[],[,,164.8],[],[220,164.8,110],[],[,,164.8],[],[,,110],[],[,,164.8],[],[207.7,164.8,103.8],[],[,,164.8],[],[,,103.8],[],[,,164.8],[],[246.9,207.7,103.8],[],[,,164.8],[],[,,103.8],[],[,,164.8],[],[329.6,261.6,110],[],[,,164.8],[],[,,110],[],[,,164.8],[],[261.6,220,110],[],[,,164.8],[],[,,110],[],[164.8],[],[293.7,246.9,103.8],[],[,,164.8],[],[,,103.8],[],[,,164.8],[],[246.9,207.7,103.8],[],[,,164.8],[],[,,103.8],[],[,,164.8],[],[261.6,220,110],[],[,,164.8],[],[329.6,261.6,110],[],[,,220],[],[440,329.6,110],[],[,,220],[],[440,329.6,110],[],[,,220],[],[415.3,329.6,246.9,82.4],[],[,,,164.8],[],[,,,82.4],[],[,,,164.8],[],[,,,82.4],[],[,,,164.8],[],[,,,82.4],[],[,,,164.8],[],[659.3,0,82.4,0],[],[,,164.8],[],[493.9,415.3,82.4],[],[523.3,0,164.8],[],[587.3,,82.4],[],[,,164.8],[],[523.3,440,82.4],[],[493.9,415.3,164.8],[],[440,329.6,55],[],[,,110],[],[440,0,55],[],[523.3,,110],[],[659.3,,55],[],[,,110],[],[587.3,,55],[],[523.3,,110],[],[493.9,415.3,51.9],[],[,,103.8],[],[493.9,415.3,51.9],[],[523.3,440,103.8],[],[587.3,493.9,51.9],[],[,,103.8],[],[659.3,0,51.9],[],[,,103.8],[],[523.3,0,55],[],[,110],[],[440,,55],[],[,,110],[],[440,,55],[],[,,110],[],[0,,123.5],[],[,,130.8],[],[0,146.8,73.4],[],[587.3,349.2,146.8],[],[,,73.4],[],[698.5,440,146.8],[],[880,523.3,73.4],[],[,,146.8],[],[784,493.9,73.4],[],[698.5,440,146.8],[],[659.3,523.3,65.4],[],[,,130.8],[],[,,65.4],[],[523.3,329.6,130.8],[],[659.3,392,65.4],[],[,,130.8],[],[587.3,349.2,65.4],[],[523.3,329.6,130.8],[],[493.9,415.3,82.4],[],[,,164.8],[],[493.9,415.3,82.4],[],[523.3,440,164.8],[],[587.3,493.9,82.4],[],[,164.8],[],[659.3,0,82.4],[],[,,164.8],[],[523.3,,110],[],[,,220],[],[440,,110],[],[,220],[],[440,,110],[],[,,220],[],[0,,110],[],[,,220],[]]
+        </script>
+    </body>
+</html>
